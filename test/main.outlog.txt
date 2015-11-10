@@ -1,0 +1,5 @@
+in_fasta_file = in.fasta
+log_file = main.outlog.txt
+out_prefix = main.out
+tmp_dir = main.outtmp
+
