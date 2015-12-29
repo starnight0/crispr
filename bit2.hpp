@@ -13,6 +13,7 @@ public:
     C & operator =(C const & src) {
         seq = src.seq;
         n   = src.n;
+		return (*this);
     }
 
     uint64_t seq;
@@ -123,12 +124,16 @@ public:
     int insert_child(uint8_t byte, Node * p)
     {
         if ( get_trie_child(byte)!=NULL ) {
-            throw runtime_error("Child is not NULL");
+            string msg("Child is not NULL");
+            msg += CZL_DBG_INFO;
+            throw runtime_error(msg);
         }
         set_trie_child( byte, p);
         child_n++;
         if ( byte < child_min ) child_min = byte;
         if ( byte > child_max ) child_max = byte;
+
+		return 0;
     }
 
     int insert_bseq(int len, uint64_t bseq, int count)
@@ -160,6 +165,8 @@ public:
         }
         child_v[m+i] = count;
         child_n++;
+
+		return 0;
     }
 
     int insert_a_unit(uint8_t * p)
@@ -187,6 +194,8 @@ public:
             if ( byte < child_min ) child_min = byte;
             if ( byte > child_max ) child_max = byte;
         }
+
+		return 0;
     }
 
     bool is_container()

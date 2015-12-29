@@ -114,6 +114,8 @@ int main(int argc, char* argv[])
             "3", 1, false)->get_value_ref();
     string & index_pre = opts.create<OptS>("index", "FILE",
             "index file prefix", "", 1, false)->get_value_ref();
+    string & out_format_s = opts.create<OptS>("out_format,of,out_fmt", "STR",
+            "output format: [tab] or html", "tab", 1, false)->get_value_ref();
     bool & is_clean = opts.create<OptB>("is_clean", "BOOL", 
             "whether to clean temporary files after finished, \
 [T/True: clean], F/False: not clean.",
@@ -158,6 +160,12 @@ int main(int argc, char* argv[])
     }
     /// }}}
 
+    enum OutFormat { OF_TAB=0, OF_HTML=1 } out_format = OF_TAB;
+    StringUtility::to_upper(out_format_s);
+    if ( out_format_s=="HTML" ) {
+        out_format = OF_HTML;
+    }
+    
     tmp_v.push_back(tmp_dir);
 
     Msg log(log_file);
@@ -167,7 +175,7 @@ int main(int argc, char* argv[])
 
     ss.str("");
     ss<< "Begin at: " << CZL_CUR_TIME << "\n";
-    cout<< ss.str() << endl;
+    cerr<< ss.str() << endl;
     log << ss.str() << endl;
 
     /*
@@ -202,18 +210,19 @@ int main(int argc, char* argv[])
     }
     */
 
+
     Node * root=NULL;
     try {
         if ( !index_pre.empty() ) {
             ss.str("");
             ss << "BEGIN load trie (" << CZL_CUR_TIME << ")";
-            cout<< ss.str() << endl;
+            cerr<< ss.str() << endl;
             log << ss.str() << endl;
 
             in_file = index_pre + "mat.4x4";
             fin.open(in_file.c_str(), ios::binary);
             if (fin.fail()) {
-                cerr << "E: Fail to open fasta file " << in_fasta_file << CZL_DBG_INFO << endl;
+                cerr << "E: Fail to open fasta file " << in_file << CZL_DBG_INFO << endl;
                 pthread_exit( (void*)-1 );
             }
             fin.read( (char*)mis_v, 0x10000 );
@@ -230,15 +239,16 @@ int main(int argc, char* argv[])
 
             ss.str("");
             ss << "END (" << CZL_CUR_TIME << ")";
-            cout<< ss.str() << endl;
+            cerr<< ss.str() << endl;
             log << ss.str() << endl;
         }
     
         ss.str("");
         ss << "\nBEGIN look for targets (" << CZL_CUR_TIME << ")";
-        cout<< ss.str() << endl;
+        cerr<< ss.str() << endl;
         log << ss.str() << endl;
 
+        // {{{
         string name, seq;
         int pam_len = pam.size();
         transform(pam.begin(), pam.end(), pam.begin(), ::toupper);
@@ -307,6 +317,8 @@ int main(int argc, char* argv[])
     //                        }
     //                    }
     //                }
+                    string seq1 = seq.substr(i, target_length);
+                    StringUtility::to_upper(seq1);
                     if ( search_strand&0x01 ) {
                         strand = '+';
                         int Nn1 = Nn;
@@ -319,24 +331,12 @@ int main(int argc, char* argv[])
                         if (j>=pam_len && Nn1<=1) {
                             tn++;
                             fout<< name << "\t" << i << "\t" << i+target_length
-                                << "\t" << seq.substr(i, target_length) << "\t" 
+                                << "\t" << seq1 << "\t" 
                                 << "1000" << "\t" << strand << "\t"
                                 << i+pam_len << "\t" << i+target_length << "\n";
-
-                            int stat[4] = {0,0,0,0};
-                            string t = seq.substr(i+pam_len, target_length-pam_len);
-                        //  fetch_index(t, fpos_v, fcount_v, idx24_fin, stat);
-                            cout<< name << "\t" << i << "\t" << i+target_length
-                                << "\t" << seq.substr(i, target_length) << "\t" 
-                                << "1000" << "\t" << strand << "\t"
-                                << i+pam_len << "\t" << i+target_length;
-                            for (j=0; j<4; j++) {
-                                cout << "\t" << stat[j];
-                            }
-                            cout << "\n";
                         }
                     }
-                    if ( search_strand&0x02 && !tn) {
+                    if ( search_strand&0x02 ) {
                         strand = '-';
                         int Nn1 = Nn;
                         for (j=0; j<pam_len; j++) {
@@ -348,10 +348,14 @@ int main(int argc, char* argv[])
                         if (j>=pam_len && Nn1<=1) {
                             tn++;
                             string rev;
-                            rev_complement_nt1_copy(seq.substr(i, target_length), rev);
-                            fout<< name << "\t" << i << "\t" << i+target_length << "\t"
-                                << rev << "\t" << "1000" << "\t" << strand << "\t"
-                                << i << "\t" << i+target_length-pam_len << "\n";
+                            rev_complement_nt1_copy(seq1, rev);
+                            if ( tn<2 || rev != seq1 ) {
+                                fout<< name << "\t" << i
+                                    << "\t" << i+target_length
+                                    << "\t" << rev << "\t" << "1000"
+                                    << "\t" << strand << "\t" << i
+                                    << "\t" << i+target_length-pam_len << "\n";
+                            }
                         }
                     }
 
@@ -394,13 +398,15 @@ int main(int argc, char* argv[])
     //                }
 
                     short tn=0;
+                    string seq1 = seq.substr(i, target_length);
+                    StringUtility::to_upper(seq1);
                     if ( search_strand&0x01 ) {
                         strand = '+';
                         int Nn1 = Nn;
                         for (j=0; j<pam_len; j++) {
                             char c = toupper(seq[i+target_length-pam_len+j]);
                             uint8_t b = nt1_to_byte(c);
-                            if ( !(b & byte_pam[j]) || !(b&byte_pam[j])==b) break;
+                            if ( !(b & byte_pam[j]) || !((b&byte_pam[j])==b) ) break;
                             if ( c=='N' ) Nn1--;
                         }
                         if (j>=pam_len) {
@@ -409,18 +415,6 @@ int main(int argc, char* argv[])
                                 << seq.substr(i, target_length) << "\t" 
                                 << "1000" << "\t" << strand << "\t"
                                 << i << "\t" << i+target_length-pam_len << "\n";
-
-                        //  string t = seq.substr(i, target_length-pam_len);
-                        //  int stat[4] = {0,0,0,0};
-                        //  fetch_index(t, fpos_v, fcount_v, idx24_fin, stat);
-                        //  cout<< name << "\t" << i << "\t" << i+target_length << "\t"
-                        //      << seq.substr(i, target_length) << "\t" 
-                        //      << "1000" << "\t" << strand << "\t"
-                        //      << i << "\t" << i+target_length-pam_len << "\n";
-                        //  for (j=0; j<4; j++) {
-                        //      cout << "\t" << stat[j];
-                        //  }
-                        //  cout << "\n";
                         }
                     }
                     if ( search_strand&0x02 && !tn ) {
@@ -429,29 +423,20 @@ int main(int argc, char* argv[])
                         for (j=0; j<pam_len; j++) {
                             char c = toupper(seq[i+pam_len-1-j]);
                             uint8_t b = nt1_to_byte(c);
-                            if ( !(b & byte_cpam[j]) || !(b&byte_cpam[j])==b ) break;
+                            if ( !(b & byte_cpam[j]) || !((b&byte_cpam[j])==b) ) break;
                             if ( c=='N' ) Nn1--;
                         }
                         if (j>=pam_len) { // target
                             tn++;
                             string rev;
-                            rev_complement_nt1_copy(seq.substr(i, target_length), rev);
-                            fout << name << "\t" << i << "\t" 
-                                 << i+target_length << "\t" << rev << "\t" << "1000"
-                                 << "\t" << strand << "\t" << i+pam_len << "\t"
-                                 << i+target_length << "\n";
-
-                        //  string t = rev.substr(0, target_length-pam_len);
-                        //  int stat[4] = {0,0,0,0};
-                        //  fetch_index(t, fpos_v, fcount_v, idx24_fin, stat);
-                        //  cout << name << "\t" << i << "\t" 
-                        //       << i+target_length << "\t" << rev << "\t" << "1000"
-                        //       << "\t" << strand << "\t" << i+pam_len << "\t"
-                        //       << i+target_length << "\n";
-                        //  for (j=0; j<4; j++) {
-                        //      cout << "\t" << stat[j];
-                        //  }
-                        //  cout << "\n";
+                            rev_complement_nt1_copy(seq1, rev);
+                            if ( tn<2 || rev!=seq1 ) {
+                                fout<< name << "\t" << i
+                                    << "\t" << i+target_length << "\t" << rev
+                                    << "\t" << "1000" << "\t" << strand
+                                    << "\t" << i+pam_len
+                                    << "\t" << i+target_length << "\n";
+                            }
                         }
                     }
                     char c = toupper(seq[i]);
@@ -467,78 +452,162 @@ int main(int argc, char* argv[])
         }
         fout.close();
         fin.close();
+        // }}}
 
         ss.str("");
         ss << "END (" << CZL_CUR_TIME << ")";
-        cout<< ss.str() << endl;
+        cerr<< ss.str() << endl;
         log << ss.str() << endl;
 
-        if (root!=NULL) {
-            ss.str("");
-            ss << "\nBEGIN Fetch statistics (" << CZL_CUR_TIME << ")";
-            cout<< ss.str() << endl;
-            log << ss.str() << endl;
-    
+        ss.str("");
+        ss << "\nBEGIN Fetch statistics (" << CZL_CUR_TIME << ")";
+        cerr<< ss.str() << endl;
+        log << ss.str() << endl;
+
+        if ( out_format == OF_HTML ) {
+//                cout<< "content-type: text/html\n";
+//                cout<< "<html><head><title>Searching Result</title></head>";
+//                cout<< "<body>";
             cout<< "<table style=\"border:1 solid black;\">";
             cout<< "<tr style=\"text-align:center;padding=2;\">"
                 << "<th>Chromosom</th><th>Begin</th><th>End</th>"
-                << "<th>Target</th><th>Strand</th><th>0-mismatch Count</th>"
-                << "<th>1-mismatch count</th><th>2-mismatch count</th>"
-                << "<th>3-mismatch count</th><th>>3-mismatch count</th>"
-                << "</tr>\n";
+                << "<th>Target</th><th>Strand</th><th>GC percentage</th>";
                 
-            in_file = out_prefix + "bed";
-            fin.open(in_file.c_str());
-            if (fin.fail()) {
-                cerr << "E: Fail to open BED file " << in_file << CZL_DBG_INFO << endl;
-                pthread_exit( (void*)-1 );
+            if (root!=NULL) {
+                cout<< "<th>0-mismatch Count</th>"
+                    << "<th>1-mismatch count</th><th>2-mismatch count</th>"
+                    << "<th>3-mismatch count</th>";
             }
-            while (!fin.eof()) {
-                string chr, seq;
-                int begin, end;
-                char strand;
-                getline(fin, line);
-                if (line.empty()) continue;
-                i = 0;
-                i = StringUtility::find(line, '\t', i, chr);
-                i = StringUtility::find(line, '\t', i, str);
-                begin = atoi(str.c_str());
-                i = StringUtility::find(line, '\t', i, str);
-                end = atoi(str.c_str());
-                i = StringUtility::find(line, '\t', i, seq);
-                i = StringUtility::find(line, '\t', i, str);
-                i = StringUtility::find(line, '\t', i, str);
-                strand = str[0];
-                string seq1 = seq.substr(0, target_length - pam_len);
-                int score[5];
-                for ( i=0; i<5; i++ ) score[i] = 0;
-                search( root, seq1, mis_v, 3, score);
+            cout<< "</tr>\n";
+        }
+            
+        in_file = out_prefix + "bed";
+        fin.open(in_file.c_str());
+        if (fin.fail()) {
+            cerr << "E: Fail to open BED file " << in_file << CZL_DBG_INFO << endl;
+            pthread_exit( (void*)-1 );
+        }
+        while (!fin.eof()) {
+            string chr, seq;
+            int begin, end;
+            char strand;
+            getline(fin, line);
+            if (line.empty()) continue;
+            i = 0;
+            i = StringUtility::find(line, '\t', i, chr);
+            i = StringUtility::find(line, '\t', i, str);
+            begin = atoi(str.c_str());
+            i = StringUtility::find(line, '\t', i, str);
+            end = atoi(str.c_str());
+            i = StringUtility::find(line, '\t', i, seq);
+            i = StringUtility::find(line, '\t', i, str);
+            i = StringUtility::find(line, '\t', i, str);
+            strand = str[0];
+            string seq1;
+            if ( pam_pos=='3' ) {
+                string rev_seq;
+                rev_complement_nt1_copy(seq, rev_seq);
+                seq1 = rev_seq.substr(pam_len);
+            } else {
+                seq1 = seq.substr(pam_len);
+            }
+            StringUtility::to_upper(seq1);
 
-                cout<< "<tr><td>" << chr << "</td>";
-                cout<< "<td>" << begin << "</td>";
-                cout<< "<td>" << end << "</td>";
-                cout<< "<td>" << seq << "</td>";
-                cout<< "<td>" << strand << "</td>";
-                for ( i=0; i<5; i++ ) {
-                    cout<< "<td>" << score[i] << "</td>";
-                }
-                cout << "</tr>\n";
+            // calculate GC content
+            int gc=0;
+            for (j=0; j<seq1.size(); j++) {
+                if (seq1[j]=='C' || seq1[j]=='G') gc++;
             }
-            fin.close();
+            short is_gc_good=1;
+			if ( gc > 0.8*seq1.size() || gc < 0.2*seq1.size() ) {
+				is_gc_good=0;
+			}
+
+            int w = 8, st = 4, wm=0;
+			if ( is_gc_good ) {
+				for (j=0; j<w; j++) {
+					if (seq1[j]=='C' || seq1[j]=='G') {
+						wm++;
+					}
+				}
+				if (wm> 0.8*w || wm< 0.2*w) is_gc_good=0;
+				int b=0, e=w;
+				while (e < seq1.size()) {
+					for (j=0; j<st; j++) {
+						if (seq1[b]=='C' || seq1[b]=='G') wm--;
+						b++;
+						if (seq1[e]=='C' || seq1[e]=='G') wm++;
+						e++;
+					}
+					if (wm> 0.8*w || wm< 0.2*w) {
+						is_gc_good=0;
+						break;
+					}
+				}
+			}
+            string color;
+            //
+
+            int score[5];
+            for ( i=0; i<5; i++ ) score[i] = 0;
+            if ( root!=NULL ) {
+                search( root, seq1, mis_v, 3, score);
+            }
+
+            if ( is_gc_good==0 || score[0]>1 || score[1]+score[2]>10 ) {
+                color="black";
+            } else {
+                color="red";
+            }
+
+            string s1, s2;
+            if ( out_format==OF_HTML ) {
+                cout << "<tr " << "style=\"color:" << color << ";\">";
+                s1 = "<td>";
+                s2 = "</td>";
+                cout << s1;
+            } else {
+                s1 = "\t";
+            }
+            cout<< chr << s2;
+            cout<< s1 << begin << s2;
+            cout<< s1 << end   << s2;
+            cout<< s1 << seq   << s2;
+            cout<< s1 << strand<< s2;
+            cout<< s1 << setprecision(3) << (float)gc*100/seq1.size() << s2;
+            if ( root!=NULL ) {
+                for ( i=0; i<4; i++ ) {
+                    cout<< s1 << score[i] << s2 ;
+                }
+            }
+            if ( out_format==OF_HTML ) {
+                cout << "</tr>\n";
+            } else {
+                cout << "\n";
+            }
+        }
+        fin.close();
+        if (root!=NULL) {
             destroy_trie(root);
             root = NULL;
-            
-            cout << "</table>";
-
-            ss.str("");
-            ss << "END (" << CZL_CUR_TIME << ")\n";
-            cout<< ss.str() << endl;
-            log << ss.str() << endl;
         }
+        
+        if ( out_format == OF_HTML ) {
+            cout << "</table>";
+        }
+
+        ss.str("");
+        ss << "END (" << CZL_CUR_TIME << ")\n";
+        cerr<< ss.str() << endl;
+        log << ss.str() << endl;
+
     } catch ( exception & e ) {
         cerr << "Exception: " << e.what() << " " << CZL_DBG_INFO << endl;
         pthread_exit( (void*)-1 );
     }
+//    if ( out_format == OF_HTML ) {
+//        cout << "</body></html>";
+//    }
 
 //  if (fpos_v!=NULL) delete []fpos_v;
 //  if (fcount_v!=NULL) delete []fcount_v;
@@ -574,36 +643,18 @@ void print_usage()
 
 void print_head()
 {
-    cout << "**************************************************" << endl;
-    cout << "* Program  : " << prog_name << endl;
-    cout << "* Version  : " << prog_version << endl;
-    cout << "* Author   : " << prog_author << endl;
-    cout << "* Function : " << prog_function << endl;
-    cout << "* Input    : " << prog_input << endl;
-    cout << "* Output   : " << prog_output << endl;
-    cout << "* Compiled Host: " << prog_compiled_host << endl;
-    cout << "* Compiled Time: " << __DATE__ << " : " __TIME__ << endl;
-    cout << "* Machine Bit: " << machine_bit() << endl;
-    cout << "* IS big endian: " << (is_be()?"yes":"no") << endl;
-    cout << "**************************************************" << endl;
-}
-
-void print_head_d()
-{
-    ifstream fin("head.txt");
-    char str[1025];
-    char c;
-    c = fin.get();
-    while ( !fin.eof() ) {
-        std::cout << c;
-        c = fin.get();
-    }
-    if (c != EOF) {
-        cout << c;
-    }
-
-    fin.close();
-    return;
+    cerr << "**************************************************" << endl;
+    cerr << "* Program  : " << prog_name << endl;
+    cerr << "* Version  : " << prog_version << endl;
+    cerr << "* Author   : " << prog_author << endl;
+    cerr << "* Function : " << prog_function << endl;
+    cerr << "* Input    : " << prog_input << endl;
+    cerr << "* Output   : " << prog_output << endl;
+    cerr << "* Compiled Host: " << prog_compiled_host << endl;
+    cerr << "* Compiled Time: " << __DATE__ << " : " __TIME__ << endl;
+    cerr << "* Machine Bit: " << machine_bit() << endl;
+    cerr << "* IS big endian: " << (is_be()?"yes":"no") << endl;
+    cerr << "**************************************************" << endl;
 }
 
 int fetch_index(string const & seq, int32_t fpos_v[0x10000], int32_t fcount_v[0x10000], ifstream & idx24, int stat[4])

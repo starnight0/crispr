@@ -72,8 +72,8 @@ int main(int argc, char* argv[])
     ofstream fout;
     // }}}
     ///
-    cout << "REMARK:\n";
-    cout << "  bed file must be sorted by name" << endl;
+//    cout << "REMARK:\n";
+//    cout << "  bed file must be sorted by name" << endl;
 
     /// for option
     // {{{
@@ -86,7 +86,11 @@ int main(int argc, char* argv[])
     bool & is_clean = opts.create<OptB>("is_clean", "BOOL", "whether to clean temporary files after finished, T/True: clean, F/False: not clean.", "T", 1, false)->get_value_ref();
 
     string & in_bed_file = opts.create<OptS>("in_bed,i", "FILE",
-            "input reference equence fasta file", "", 1, true)->get_value_ref();
+            "input bed file, 'name' column is 32-mer+PAM seq", 
+            "", 1, false)->get_value_ref();
+
+    string & in_fasta_file = opts.create<OptS>("in_fasta,in_fa", "FILE",
+            "input fasta sequence file", "", 1, false)->get_value_ref();
 
     string & pam = opts.create<OptS>("pam", "STR",
             "length of the PAM", "NGG", 1, false)->get_value_ref();
@@ -141,13 +145,19 @@ int main(int argc, char* argv[])
     }
     /// }}}
 
+    if ( in_bed_file.empty() && in_fasta_file.empty() ) {
+        cerr<< "E: Either 'in_bed' or 'in_fasta' should be provided. (" 
+            << CZL_DBG_INFO << ")" << endl; 
+        pthread_exit( (void*)-1 );
+    }
+
     vector<string> tmp_v(1, tmp_dir);
 
     int K = 32;
 
     Msg log(log_file);
     rawtime = time(NULL);
-    cout<< "Begin at: " << str_time(rawtime) << ", " 
+    cerr<< "Begin at: " << str_time(rawtime) << ", " 
         << clock()/CLOCKS_PER_SEC << endl;
     log << "Begin at: " << str_time(rawtime) << ", " 
         << clock()/CLOCKS_PER_SEC << endl;
@@ -166,46 +176,96 @@ int main(int argc, char* argv[])
             << str_time(rawtime) << ", " << (float)clock()/CLOCKS_PER_SEC << ")" << endl;
     //  vector<uint64_t> bseq_v;
     //  vector<uint8_t> bc_v; // bseq count
-        string in_file = in_bed_file;
-        fin.open(in_file.c_str());
-        if (fin.fail()) {
-            cerr << "E: Fail to open file " << in_file << CZL_DBG_INFO << endl;
-            pthread_exit( (void*)(-1) );
-        }
         seq_len = 32;
         Node * root=NULL;
         int count=0;
-        while (!fin.eof()) {
-            getline(fin, line);
-            StringUtility::trim(line, " \t");
-            if ( line.empty() ) continue;
-
-            i=0;
-            i = line.find('\t', i);
-            i++;
-            i = line.find('\t', i);
-            i++;
-            i = line.find('\t', i);
-            i++;
-            string seq;
-            i = StringUtility::find(line, '\t', i, seq);
-            if (seq.empty()) continue;
-
-            if ( pam_pos=='5' ) {
-                seq = seq.substr(pam_len);
-            } else {
-                seq = seq.substr(0, seq.size()-pam_len);
+        if ( !in_bed_file.empty() ) {
+            string in_file = in_bed_file;
+            fin.open(in_file.c_str());
+            if (fin.fail()) {
+                cerr << "E: Fail to open file " << in_file << CZL_DBG_INFO << endl;
+                pthread_exit( (void*)(-1) );
             }
-            int len = 0;
-            // change to bit2 format
-            bseq = 0;
-            str_to_bit2_64(seq, &len, &bseq);
-            root = build_trie_insert( len, bseq, root );
-            count++;
-        }
-        fin.close();
+            while (!fin.eof()) {
+                getline(fin, line);
+                StringUtility::trim(line, " \t");
+                if ( line.empty() ) continue;
 
-        container_sort(root);
+                i=0;
+                i = line.find('\t', i);
+                i++;
+                i = line.find('\t', i);
+                i++;
+                i = line.find('\t', i);
+                i++;
+                string seq;
+                i = StringUtility::find(line, '\t', i, seq);
+                if (seq.empty()) continue;
+
+                if ( pam_pos=='3' ) {
+                    rev_complement_nt1(seq);
+                }
+                seq = seq.substr(pam_len);
+                int len = 0;
+                // change to bit2 format
+                bseq = 0;
+                str_to_bit2_64(seq, &len, &bseq);
+                root = build_trie_insert( len, bseq, root );
+                count++;
+            }
+            fin.close();
+        } else if ( !in_fasta_file.empty() ) {
+            string in_file = in_fasta_file;
+            fin.open(in_file.c_str());
+            if (fin.fail()) {
+                cerr << "E: Fail to open file " << in_file << CZL_DBG_INFO << endl;
+                pthread_exit( (void*)(-1) );
+            }
+            int Nn=0;
+            string name0, seq0;
+            while ( !fin.eof() && !Fasta::get_a_seq(fin, name0, seq0) ) {
+                if ( seq0.empty() || seq0.size()<seq_len ) continue;
+                Nn = 0;
+                for (i=0; i<seq_len-1 && i<seq0.size(); i++) {
+                    if ( (seq0[i] & ~0x20) == 'N' ) {
+                        Nn++;
+                    }
+                }
+                for ( i=0; i<=seq0.size()-seq_len; i++ ) {
+                    if ( (seq0[i+seq_len-1] & ~0x20) =='N' ) Nn++;
+                    if ( Nn==0 ) {
+                        int len = 0;
+                        string seq = seq0.substr(i, seq_len);
+
+                        // change to bit2 format
+                        len = 0;
+                        bseq = 0;
+                        str_to_bit2_64(seq, &len, &bseq);
+                        root = build_trie_insert( len, bseq, root );
+                        count++;
+
+                        rev_complement_nt1(seq);
+
+                        len = 0;
+                        uint64_t rc_bseq = 0;
+                        str_to_bit2_64(seq, &len, &rc_bseq);
+                        if ( rc_bseq != bseq ) {
+                            root = build_trie_insert( len, rc_bseq, root );
+                            count++;
+                        }
+                    }
+                    if ( (seq0[i] & ~0x20) =='N' ) Nn--;
+                }
+            }
+            fin.close();
+        }
+
+        if ( root==NULL ) {
+            cerr<< "E: Fail to build index. " << CZL_DBG_INFO << endl;
+            pthread_exit( (void*)(-1) );
+        } else {
+            container_sort(root);
+        }
         out_file = out_prefix + "trie";
         fout.open(out_file.c_str(), ios::binary);
         if ( fout.fail() ) {

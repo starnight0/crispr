@@ -266,7 +266,7 @@ Node* build_trie_insert(int seq_len, uint64_t bseq, Node * root)
             if (here->n < 255) here->n++;
 
             // burst container if container is too large
-			// but don't burst last level
+            // but don't burst last level
             if ( here->child_n > M ) {
                 here->burst();
             }
@@ -326,16 +326,16 @@ int cal_des_n(vector<Node*> node_v, int root_id)
 
 void print_trie_to_file(char const * file, Node *root)
 {
-	ofstream fout(file);
-	print_trie(fout, root);
-	fout.close();
+    ofstream fout(file);
+    print_trie(fout, root);
+    fout.close();
 }
 
 void print_trie_to_file(string const & file, Node *root)
 {
-	ofstream fout(file.c_str());
-	print_trie(fout, root);
-	fout.close();
+    ofstream fout(file.c_str());
+    print_trie(fout, root);
+    fout.close();
 }
 
 void print_trie(ostream & out, Node *root)
@@ -402,21 +402,21 @@ void write_trie(ofstream & fout, Node * root, uint8_t b)
         uint16_t m = root->child_n;
         if ( !root->is_container() ) {
             fout.write( (char*)&m, sizeof(m));
-			if ( m>0 ) {
-				for (int i=0; i<256; i++) {
+            if ( m>0 ) {
+                for (int i=0; i<256; i++) {
                     Node * p = root->get_trie_child(i);
-					if ( p!=NULL ) {
-						write_trie(fout, p, (uint8_t)i);
-					}
-				}
-			}
+                    if ( p!=NULL ) {
+                        write_trie(fout, p, (uint8_t)i);
+                    }
+                }
+            }
         } else {
             m |= 0x8000;
             fout.write( (char*)&m, sizeof(m));
-			fout << flush;
+//            fout << flush;
             if ( root->child_unit>1 ) {
                 fout.write( (char*)root->child_v, root->child_n*root->child_unit );
-				fout << flush;
+//                fout << flush;
             }
         }
     }
@@ -426,11 +426,11 @@ Node * read_trie(ifstream & fin, uint8_t *b)
 {
     uint8_t n;
     uint16_t m;
-	uint8_t bb;
+    uint8_t bb;
     uint8_t unit;
-	fin.read( (char*)&bb, sizeof(bb));
+    fin.read( (char*)&bb, sizeof(bb));
     if ( b!=NULL ) {
-		(*b) = bb;
+        (*b) = bb;
     }
     fin.read( (char*)&n, sizeof(n));
     fin.read( (char*)&unit, sizeof(unit));
@@ -444,9 +444,9 @@ Node * read_trie(ifstream & fin, uint8_t *b)
         }
         p->n = n;
         p->child_unit = unit;
-        uint8_t m0 = m&0x7fff;
+        uint16_t m0 = m&0x7fff;
         if ( unit>1 ) {
-            uint8_t * u = new uint8_t[unit];
+            uint8_t * u = new uint8_t[unit+1];
             for (int i=0; i<m0; i++) {
                 fin.read( (char*)u, unit );
                 if (fin.fail() ) {
@@ -624,7 +624,7 @@ int Node::merge()
     u = p->get_a_unit(0);
     // merge identical sequence and count
 //  j=0;
-    for (i=1; i<n; i++) {
+    for (i=1; i<child_n; i++) {
         u1 = get_a_unit(order[i]);
         for (k=0; k<child_unit-1; k++) {
             if ( u1[k] != u[k] ) break;
@@ -725,8 +725,8 @@ int Node::burst()
     } else {
         uint8_t *p = parent->child_v;
         parent->child_v = NULL;
-		parent->child_sz = 0;
-		parent->child_n = 0;
+        parent->child_sz = 0;
+        parent->child_n = 0;
         delete []p;
     }
     return 0;
@@ -799,7 +799,7 @@ int search(Node * root, int seq_len, uint64_t bseq, uint8_t mis_v[0x10000], int 
                 }
             }
         } else {
-			int m = max_mis - mis0;
+            int m = max_mis - mis0;
             if (m==0) {
                 Node * p = root->get_trie_child(b0);
                 if ( p != NULL ) {
